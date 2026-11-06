@@ -1,0 +1,5 @@
+# Local private data. Never commit.
+.env
+.env.*
+!.env.example
+privacy.denylist.local
