@@ -1,6 +1,5 @@
-# Private runtime identity. Keep real values off the branch.
-site.config.js
-privacy.denylist.local
+# Local private data. Never commit.
 .env
 .env.*
 !.env.example
+privacy.denylist.local

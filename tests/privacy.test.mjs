@@ -10,7 +10,14 @@ const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 const PHONE = /(?:\+\d{1,3}[\s.-])?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}/;
 const SECRET = /-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|sk_live_[A-Za-z0-9]{10,}/;
 
-const IGNORED_RUNTIME = ["site.config.js", ".env", "privacy.denylist.local"];
+const IGNORED_RUNTIME = [".env", "privacy.denylist.local"];
+const REMOVED_SITE_PATHS = [
+  "index.html",
+  "site.js",
+  "site.config.js",
+  "site.config.example.js",
+  "assets/site.css"
+];
 
 function git(args) {
   return execFileSync("git", args, {
@@ -69,6 +76,14 @@ test("private runtime paths are ignored and untracked", () => {
   }
 });
 
+test("removed site files stay untracked", () => {
+  const tracked = new Set(trackedFiles());
+  for (const rel of REMOVED_SITE_PATHS) {
+    assert.equal(tracked.has(rel), false, `${rel} is tracked`);
+    assert.equal(fs.existsSync(path.join(root, rel)), false, `${rel} exists`);
+  }
+});
+
 test("tracked files exclude contact details, secrets, and account identity", () => {
   const owner = originOwner();
   const forbidden = denylistEntries();
@@ -112,49 +127,27 @@ test("denylist matching does not require the forbidden string in the assertion",
   assert.equal(locationLabel("zz-local-denylist-marker.txt", marker), "a tracked path");
 });
 
-test("optional local denylist and runtime config stay untracked", () => {
+test("optional local denylist stays untracked", () => {
   const denylist = path.join(root, "privacy.denylist.local");
-  const localConfig = path.join(root, "site.config.js");
   assert.equal(fs.existsSync(denylist), false, "denylist should not be created in the repository");
-  assert.equal(fs.existsSync(localConfig), false, "runtime config should not be created in the repository");
 
-  fs.writeFileSync(denylist, "Example Site\n", "utf8");
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const knownPhrase = "Placeholder repository";
+  assert.equal(contains(readme, knownPhrase), true, "readme lost its generic heading phrase");
+
+  fs.writeFileSync(denylist, `${knownPhrase}\n`, "utf8");
   const denylistHit = trackedFiles().some((rel) => {
     const text = fs.readFileSync(path.join(root, rel), "utf8");
     return denylistEntries().some((entry) => contains(text, entry) || contains(rel, entry));
   });
-  assert.equal(denylistHit, true, "expected the local denylist scanner to notice a known placeholder");
+  assert.equal(denylistHit, true, "expected the local denylist scanner to notice a tracked phrase");
 
   fs.writeFileSync(denylist, "# comment\n\nzz-local-denylist-marker\n", "utf8");
-  fs.writeFileSync(
-    localConfig,
-    "window.SITE_CONFIG = { title: 'Local Example', bio: 'Local fictional override.' };\n",
-    "utf8"
-  );
   try {
     git(["check-ignore", "-q", "--", "privacy.denylist.local"]);
-    git(["check-ignore", "-q", "--", "site.config.js"]);
-    assert.equal(git(["status", "--short", "--", "privacy.denylist.local", "site.config.js"]), "");
-    assert.equal(trackedFiles().includes("site.config.js"), false);
+    assert.equal(git(["status", "--short", "--", "privacy.denylist.local"]), "");
     assert.equal(trackedFiles().includes("privacy.denylist.local"), false);
   } finally {
     fs.rmSync(denylist, { force: true });
-    fs.rmSync(localConfig, { force: true });
   }
-});
-
-test("placeholder page and example config stay generic", () => {
-  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const example = fs.readFileSync(path.join(root, "site.config.example.js"), "utf8");
-  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
-
-  assert.match(html, /fictional placeholder/i);
-  assert.match(html, /id="site-title"/);
-  assert.match(html, /id="site-bio"/);
-  assert.match(example, /Alex Example/);
-  assert.match(example, /fictional/i);
-  assert.match(readme, /site\.config\.js/);
-  assert.doesNotMatch(html, EMAIL);
-  assert.doesNotMatch(example, EMAIL);
-  assert.doesNotMatch(readme, EMAIL);
 });
